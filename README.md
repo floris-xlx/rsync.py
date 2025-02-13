@@ -15,3 +15,36 @@
 ## Installation
 
 To install `rsync_cli`, clone the repository and ensure you have Python and `rsync` installed on your system. For example, run the following commands:
+
+## Examples (Interactive)
+```bash
+Current Directory: /mnt/c/Users/floris/Documents/GitHub/rsync.py
+
+> ..
+  .git
+  .gitignore
+  README.md
+  cli.py
+  project.toml
+  requirements.txt
+  src
+
+
+Select a file to transfer (Arrow keys to navigate, Left to go up, Right to go in, Enter to select, Ctrl+X/Esc/Q to quit):
+```
+
+```bash
+Use last host (floris@example.com)? (Y/n): n
+Enter the remote server user@host (e.g., user@example.com): floris-xlx@example.com
+Enter the remote destination path (e.g., /home/user/destination/): /home/floris-xlx/files
+Enter the SSH port (default: 22): 22
+Starting Rsync transfer...
+floris-xlx@example.com's password: 
+sending incremental file list
+log.txt
+          1,491 100%    0.00kB/s    0:00:00 (xfr#1, to-chk=0/1)
+
+sent 493 bytes  received 35 bytes  150.86 bytes/sec
+total size is 1,491  speedup is 2.82
+File transfer complete.
+```
