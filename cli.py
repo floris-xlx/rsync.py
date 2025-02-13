@@ -2,6 +2,7 @@ import os
 import curses
 import subprocess
 import json
+import mimetypes
 
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), "rsync.json")
 
@@ -31,6 +32,31 @@ def initialize_curses():
     curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)
 
 
+def format_size(size_bytes):
+    if size_bytes >= 1024**3:
+        size = size_bytes / 1024**3
+        unit = "GB"
+    elif size_bytes >= 1024**2:
+        size = size_bytes / 1024**2
+        unit = "MB"
+    elif size_bytes >= 1024:
+        size = size_bytes / 1024
+        unit = "KB"
+    else:
+        size = size_bytes
+        unit = "B"
+    return f"{size:.2f} {unit}"
+
+
+def get_directory_size(directory):
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(directory):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            total_size += os.path.getsize(fp)
+    return total_size
+
+
 def display_files(stdscr, current_dir, files, selected, executable_extensions):
     stdscr.clear()
     height, width = stdscr.getmaxyx()
@@ -50,6 +76,11 @@ def display_files(stdscr, current_dir, files, selected, executable_extensions):
         if i == selected:
             stdscr.addstr(i + 2, 0, f"> {file}",
                           curses.color_pair(1) | curses.A_BOLD)
+            # Display file metadata
+            if os.path.isfile(file_path):
+                file_size = os.path.getsize(file_path)
+                mime_type, _ = mimetypes.guess_type(file_path)
+                stdscr.addstr(height - 2, 0, f"File: {file} | Size: {format_size(file_size)} | Type: {mime_type or 'Unknown'}")
         else:
             stdscr.addstr(i + 2, 0, f"  {file}", color_pair)
 
