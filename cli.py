@@ -62,8 +62,8 @@ def display_files(term, current_dir, files, selected, executable_extensions):
     print(term.move(0, 0) + f"Current Directory: {current_dir}")
 
     # Calculate the start index for the visible window of files
-    start_index = max(0, min(len(files) - (term.height - 3), selected - (term.height - 4) // 2))
-    end_index = start_index + term.height - 3
+    start_index = max(0, min(len(files) - (term.height - 5), selected - (term.height - 6) // 2))
+    end_index = start_index + term.height - 5
 
     for i, file in enumerate(files[start_index:end_index]):
         file_path = os.path.join(current_dir, file)
@@ -82,11 +82,11 @@ def display_files(term, current_dir, files, selected, executable_extensions):
             if os.path.isfile(file_path):
                 file_size = os.path.getsize(file_path)
                 mime_type, _ = mimetypes.guess_type(file_path)
-                print(term.move(term.height - 2, 0) + f"File: {file} | Size: {format_size(file_size)} | Type: {mime_type or 'Unknown'}")
+                print(term.move(term.height - 3, 0) + f"File: {file} | Size: {format_size(file_size)} | Type: {mime_type or 'Unknown'}")
         else:
             print(term.move(i + 2, 0) + color(f"  {file}"))
 
-    print(term.move(term.height - 1, 0) + "Select a file to transfer (Arrow keys to navigate, Left to go up, Right to go in, Enter to select, Ctrl+X/Esc/Q to quit):")
+    print(term.move(term.height - 2, 0) + "Select a file to transfer (Arrow keys to navigate, Left to go up, Right to go in, Enter to select, Ctrl+X/Esc/Q to quit):")
 
 
 def file_explorer(term):
@@ -109,11 +109,34 @@ def file_explorer(term):
             return selected_path
 
 def start_rsync_transfer(selected_file, remote_user, remote_path, ssh_port):
+    import enlighten
+
     print("Starting Rsync transfer...")
-    subprocess.run([
-        "rsync", "-avzP", "-e", f"ssh -p {ssh_port}", selected_file,
-        f"{remote_user}:{remote_path}"
-    ])
+    manager = enlighten.Manager()
+    progress_bar = manager.counter(total=100, desc='Rsync Progress', unit='%', leave=False)
+
+    # Run rsync and capture the output
+    process = subprocess.Popen(
+        [
+            "rsync", "-avzP", "--compress-level=9", "--partial", "--inplace", "-e", f"ssh -p {ssh_port}", selected_file,
+            f"{remote_user}:{remote_path}"
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    for line in process.stdout:
+        if '%' in line:
+            # Extract the percentage from the rsync output
+            try:
+                percent = int(line.split('%')[0].split()[-1])
+                progress_bar.update(percent - progress_bar.count)
+            except (ValueError, IndexError):
+                pass
+
+    process.wait()
+    progress_bar.close()
     print("File transfer complete.")
 
 
