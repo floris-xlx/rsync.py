@@ -1,5 +1,5 @@
 import os
-import curses
+from blessed import Terminal
 import subprocess
 import json
 import mimetypes
@@ -15,6 +15,9 @@ def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
             return json.load(f)
+    else:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump({}, f)
     return {}
 
 
@@ -23,13 +26,9 @@ def save_config(config):
         json.dump(config, f)
 
 
-def initialize_curses():
-    curses.curs_set(0)
-    curses.start_color()
-    curses.init_pair(1, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
-    curses.init_pair(2, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-    curses.init_pair(3, curses.COLOR_BLUE, curses.COLOR_BLACK)
-    curses.init_pair(4, curses.COLOR_RED, curses.COLOR_BLACK)
+def initialize_terminal(term):
+    print(term.enter_fullscreen)
+    print(term.clear)
 
 
 def format_size(size_bytes):
@@ -57,55 +56,57 @@ def get_directory_size(directory):
     return total_size
 
 
-def display_files(stdscr, current_dir, files, selected, executable_extensions):
-    stdscr.clear()
-    height, width = stdscr.getmaxyx()
-    stdscr.addstr(0, 0, f"Current Directory: {current_dir}")
+def display_files(term, current_dir, files, selected, executable_extensions):
+    print(term.clear)
+    width = term.width
+    print(term.move(0, 0) + f"Current Directory: {current_dir}")
 
-    for i, file in enumerate(files[:height - 3]):
+    # Calculate the start index for the visible window of files
+    start_index = max(0, min(len(files) - (term.height - 3), selected - (term.height - 4) // 2))
+    end_index = start_index + term.height - 3
+
+    for i, file in enumerate(files[start_index:end_index]):
         file_path = os.path.join(current_dir, file)
         file_ext = os.path.splitext(file)[-1].lower()
 
         if os.path.isdir(file_path):
-            color_pair = curses.color_pair(2)
+            color = term.yellow
         elif file_ext in executable_extensions:
-            color_pair = curses.color_pair(4)
+            color = term.red
         else:
-            color_pair = curses.color_pair(3)
+            color = term.blue
 
-        if i == selected:
-            stdscr.addstr(i + 2, 0, f"> {file}",
-                          curses.color_pair(1) | curses.A_BOLD)
+        if i + start_index == selected:
+            print(term.move(i + 2, 0) + term.bold + term.magenta(f"> {file}"))
             # Display file metadata
             if os.path.isfile(file_path):
                 file_size = os.path.getsize(file_path)
                 mime_type, _ = mimetypes.guess_type(file_path)
-                stdscr.addstr(height - 2, 0, f"File: {file} | Size: {format_size(file_size)} | Type: {mime_type or 'Unknown'}")
+                print(term.move(term.height - 2, 0) + f"File: {file} | Size: {format_size(file_size)} | Type: {mime_type or 'Unknown'}")
         else:
-            stdscr.addstr(i + 2, 0, f"  {file}", color_pair)
+            print(term.move(i + 2, 0) + color(f"  {file}"))
 
-    stdscr.addstr(
-        height - 1, 0,
-        "Select a file to transfer (Arrow keys to navigate, Left to go up, Right to go in, Enter to select, Ctrl+X/Esc/Q to quit):"
-    )
+    print(term.move(term.height - 1, 0) + "Select a file to transfer (Arrow keys to navigate, Left to go up, Right to go in, Enter to select, Ctrl+X/Esc/Q to quit):")
 
 
-def file_explorer(stdscr):
-    initialize_curses()
+def file_explorer(term):
+    initialize_terminal(term)
     executable_extensions = {".exe", ".py", ".sh", ".rs", ".ts", ".js", ".pyt"}
     current_dir = os.getcwd()
     files = get_files_in_directory(current_dir)
+    
+    # Sort files by size
+    files = sorted(files, key=lambda f: os.path.getsize(os.path.join(current_dir, f)) if os.path.isfile(os.path.join(current_dir, f)) else 0)
+    
     selected = 0
 
     while True:
-        display_files(stdscr, current_dir, files, selected,
-                      executable_extensions)
-        key = stdscr.getch()
+        display_files(term, current_dir, files, selected, executable_extensions)
+        key = term.inkey()
         selected_path, current_dir, files, selected = handle_key_press(
             key, current_dir, files, selected)
         if selected_path is not None:
             return selected_path
-
 
 def start_rsync_transfer(selected_file, remote_user, remote_path, ssh_port):
     print("Starting Rsync transfer...")
@@ -117,21 +118,45 @@ def start_rsync_transfer(selected_file, remote_user, remote_path, ssh_port):
 
 
 def main():
-    config = load_config()
+    term = Terminal()
+    try:
+        print(term.blue("Loading configuration..."))
+        config = load_config()
+        print(term.green("Configuration loaded successfully."))
 
-    selected_file = curses.wrapper(file_explorer)
-    if not selected_file:
-        print("No file selected. Exiting.")
-        return
+        print(term.blue("Starting file explorer..."))
+        try:
+            with term.fullscreen(), term.cbreak():
+                selected_file = file_explorer(term)
+            if not selected_file:
+                print("No file selected. Exiting.")
+                return
+        except Exception as e:
+            print(term.red(f"An error occurred during file selection: {e}"))
+            return
+        print(f"File selected: {selected_file}")
 
-    remote_user = get_remote_user(config)
-    remote_path = get_remote_path()
-    ssh_port = get_ssh_port()
+        print("Retrieving remote user information...")
+        remote_user = get_remote_user(config)
+        print(f"Remote user: {remote_user}")
 
-    config["remote_user"] = remote_user
-    save_config(config)
+        print("Retrieving remote path...")
+        remote_path = get_remote_path(config)
+        print(f"Remote path: {remote_path}")
 
-    start_rsync_transfer(selected_file, remote_user, remote_path, ssh_port)
+        print("Retrieving SSH port...")
+        ssh_port = get_ssh_port(config)
+        print(f"SSH port: {ssh_port}")
+
+        print("Updating configuration with remote user...")
+        config["remote_user"] = remote_user
+        save_config(config)
+        print("Configuration updated and saved.")
+        print(term.blue("Initiating file transfer..."))
+        start_rsync_transfer(selected_file, remote_user, remote_path, ssh_port)
+        print(term.green("File transfer initiated successfully."))
+    except Exception as e:
+        print(term.red(f"An error occurred: {e}"))
 
 
 if __name__ == "__main__":
